@@ -304,6 +304,16 @@ async def test_wall_switch_interrupts_ramp(client: CBus) -> None:
     assert client.groups[8].target is None
 
 
+async def test_terminate_at_zero_and_unknown_level(client: CBus) -> None:
+    report(client, Status.OFF, 0)
+    with patch("custom_components.cbus_rs232.cbus.client.monotonic", return_value=100):
+        await client.set_level(8, 255, 1)
+        await client.command(LightingCommand(8, 9))
+    assert client.groups[8].status == Status.OFF
+    client._apply(LightingEvent(56, (LightingCommand(9, 9),)))
+    assert client.groups[9].level is None
+
+
 async def test_unknown_ramp_start_and_same_target(client: CBus) -> None:
     await client.set_level(8, 255, 1)
     assert client.groups[8].brightness == 255

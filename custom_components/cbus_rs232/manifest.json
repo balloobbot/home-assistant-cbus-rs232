@@ -1,8 +1,10 @@
 {
   "domain": "cbus_rs232",
   "name": "C-Bus RS-232",
+  "categories": ["lighting.lighting_systems", "hubs_protocols.building_automation"],
   "codeowners": ["@balloobbot"],
   "config_flow": true,
+  "connectivity": ["serial"],
   "dependencies": ["usb"],
   "documentation": "https://github.com/balloobbot/cbus-rs232-hass",
   "integration_type": "hub",

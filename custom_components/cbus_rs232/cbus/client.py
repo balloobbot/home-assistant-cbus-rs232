@@ -321,6 +321,8 @@ class CBus:
                 elif command.opcode == 9:
                     group.level = group.brightness
                     group.target = None
+                    if group.level is not None:
+                        group.status = Status.ON if group.level else Status.OFF
                 else:
                     options, language = command.data[:2]
                     if options == 0 and language == 1:
