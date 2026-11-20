@@ -1,0 +1,14 @@
+{
+  "title": "C-Bus RS-232",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to C-Bus",
+        "description": "Select the serial port connected to a C-Bus PCI. Use the decimal lighting application address from your installation (normally 56).",
+        "data": {"port": "Serial port", "application": "Lighting application"}
+      }
+    },
+    "error": {"cannot_connect": "Cannot communicate with the C-Bus PCI. Check the serial proxy, wiring, and C-Bus power."},
+    "abort": {"already_configured": "This serial port is already configured."}
+  }
+}
