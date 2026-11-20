@@ -1,3 +1,5 @@
+[![Open in Home Assistant Marketplace](https://my.home-assistant.io/badges/marketplace_repository.svg)](https://my.home-assistant.io/redirect/marketplace_repository/?owner=balloobbot&repository=home-assistant-cbus-rs232&category=integration)
+
 # C-Bus RS-232 for Home Assistant
 
 Control Clipsal C-Bus through a 5500PC serial interface and an ESPHome RS-232 serial proxy. This custom integration connects directly to the PCI. It needs no C-Gate server, MQTT broker, or installer project file.
@@ -32,7 +34,7 @@ Non-load applications also expose event entities. Each event includes its comman
 
 ## Install
 
-1. In HACS, add `https://github.com/balloobbot/cbus-rs232-hass` as a custom repository with category **Integration**.
+1. Open the Marketplace link above to add this repository to Home Assistant.
 2. Download **C-Bus RS-232** and restart Home Assistant.
 3. Go to **Settings → Devices & services → Add integration → C-Bus RS-232**.
 4. Select the serial proxy port connected to the PCI.
