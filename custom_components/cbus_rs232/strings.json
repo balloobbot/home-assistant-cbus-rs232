@@ -4,11 +4,42 @@
     "step": {
       "user": {
         "title": "Connect to C-Bus",
-        "description": "Select the serial port connected to a C-Bus PCI. Use the decimal lighting application address from your installation (normally 56).",
-        "data": {"port": "Serial port", "application": "Lighting application"}
+        "description": "Select the serial port connected to a C-Bus PCI. All published applications are monitored. Set the primary lighting application for the initial level scan (normally 56).",
+        "data": {
+          "port": "Serial port",
+          "application": "Primary lighting application"
+        }
       }
     },
-    "error": {"cannot_connect": "Cannot communicate with the C-Bus PCI. Check the serial proxy, wiring, and C-Bus power."},
-    "abort": {"already_configured": "This serial port is already configured."}
+    "error": {
+      "cannot_connect": "Cannot communicate with the C-Bus PCI. Check the serial proxy, wiring, and C-Bus power."
+    },
+    "abort": {
+      "already_configured": "This serial port is already configured."
+    }
+  },
+  "services": {
+    "send_command": {
+      "name": "Send application command",
+      "description": "Send a named C-Bus command. Use the command reference for fields and units. Requires administrator access.",
+      "fields": {
+        "entry_id": {
+          "name": "Integration",
+          "description": "The C-Bus connection."
+        },
+        "application": {
+          "name": "Application",
+          "description": "The decimal application address."
+        },
+        "command": {
+          "name": "Command",
+          "description": "A command name from the command reference."
+        },
+        "fields": {
+          "name": "Fields",
+          "description": "The exact named fields required by the command."
+        }
+      }
+    }
   }
 }

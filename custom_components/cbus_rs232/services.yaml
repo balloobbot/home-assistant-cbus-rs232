@@ -1,0 +1,24 @@
+send_command:
+  fields:
+    entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: cbus_rs232
+    application:
+      required: true
+      example: 202
+      selector:
+        number:
+          min: 0
+          max: 255
+          mode: box
+    command:
+      required: true
+      example: trigger
+      selector:
+        text:
+    fields:
+      example: '{"group": 1, "action": 255}'
+      selector:
+        object:

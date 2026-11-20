@@ -3,6 +3,13 @@
 from dataclasses import dataclass
 from enum import IntEnum
 
+from .applications import (
+    DEFINITIONS,
+    LOAD_APPLICATIONS,
+    ApplicationEvent,
+    decode_application,
+)
+
 RAMP_SECONDS = (0, 4, 8, 12, 20, 30, 40, 60, 90, 120, 180, 300, 420, 600, 900, 1020)
 PAIRS = {5: 3, 6: 2, 9: 1, 10: 0}
 
@@ -69,6 +76,12 @@ def lighting_application(application: int) -> int:
     return application
 
 
+def load_application(application: int) -> int:
+    if byte(application) not in LOAD_APPLICATIONS:
+        raise ValueError("Not a load-control application")
+    return application
+
+
 def checksum(data: bytes) -> bytes:
     return data + bytes([-sum(data) & 255])
 
@@ -87,7 +100,7 @@ def encode_commands(application: int, commands: tuple[LightingCommand, ...]) -> 
     # Validate the whole batch before sending any of it to the bus.
     if decode_commands(payload) != commands:
         raise ValueError("Cannot transmit reserved lighting commands")
-    return bytes([5, lighting_application(application), 0]) + payload
+    return bytes([5, load_application(application), 0]) + payload
 
 
 def level_command(group: int, level: int, ramp_index: int = 0) -> LightingCommand:
@@ -97,7 +110,7 @@ def level_command(group: int, level: int, ramp_index: int = 0) -> LightingComman
 
 
 def status_request(application: int, start: int = 0, *, levels: bool = False) -> bytes:
-    lighting_application(application)
+    load_application(application)
     if byte(start) % 32:
         raise ValueError("Status block must start at a multiple of 32")
     command = b"\x73\x07" if levels else b"\x7a"
@@ -187,7 +200,7 @@ def _status(data: bytes) -> StatusReport:
     return StatusReport(application, tuple(groups), coding & 7 == 7)
 
 
-def decode_line(line: bytes) -> LightingEvent | StatusReport | None:
+def decode_line(line: bytes) -> LightingEvent | StatusReport | ApplicationEvent | None:
     # bytes.fromhex accepts whitespace; wire frames must not contain it.
     if (
         not line
@@ -220,6 +233,10 @@ def decode_line(line: bytes) -> LightingEvent | StatusReport | None:
         payload = data[5:-1]
     else:
         return None
-    if not 0x30 <= application <= 0x5F:
-        return None
-    return LightingEvent(application, decode_commands(payload))
+    if application in LOAD_APPLICATIONS:
+        return LightingEvent(application, decode_commands(payload))
+    if application in DEFINITIONS:
+        return ApplicationEvent(
+            application, data[1], decode_application(application, payload)
+        )
+    return None

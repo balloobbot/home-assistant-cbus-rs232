@@ -30,15 +30,17 @@ async def settle() -> None:
 
 async def test_connect(client: CBus, pci: PCI) -> None:
     assert client.connected
-    assert pci.writes[:4] == [
+    assert pci.writes[:5] == [
         b"~~~\r",
-        b"@A3210038g\r",
-        b"@A3420006h\r",
-        b"@A3300079i\r",
+        b"@A32100FFg\r",
+        b"@A32200FFh\r",
+        b"@A3420006i\r",
+        b"@A3300079j\r",
     ]
-    assert len(pci.writes) == 13
-    assert pci.writes[4] == b"\\05FF007A38004Aj\r"
-    assert pci.writes[-1].startswith(b"\\05FF00730738E0")
+    assert len(pci.writes) == 66
+    assert pci.writes[5] == b"\\05FF007A38004Ak\r"
+    assert pci.writes[13].startswith(b"\\05FF00730738E0")
+    assert pci.writes[-1].startswith(b"\\05FF007A7400")
     await client.disconnect()
     assert pci.closed
     assert not client.connected
@@ -49,7 +51,7 @@ async def test_commands_and_tags(client: CBus, pci: PCI) -> None:
     await asyncio.gather(*(client.set_level(8, level) for level in range(25)))
     assert client.groups[8].level == 24
     assert pci.writes[-1].startswith(b"\\053800020818")
-    assert pci.writes[-1][-2:] == b"w\r"
+    assert pci.writes[-1][-2:] == b"p\r"
 
 
 @pytest.mark.parametrize("result", [b"#", b"$", b"%"])
@@ -367,3 +369,12 @@ async def test_poll(client: CBus) -> None:
         await client._poll()
     assert refresh.call_count == 2
     assert not client.connected
+
+
+async def test_refresh_other_loads_without_repeated_empty_scans(client, pci):
+    client._apply(StatusReport(0x70, (GroupStatus(42, Status.ON, 128),)))
+    pci.writes.clear()
+    await client.refresh()
+    assert len(pci.writes) == 11
+    assert pci.writes[-2].startswith(b"\\05FF007A7000")
+    assert pci.writes[-1].startswith(b"\\05FF0073077020")

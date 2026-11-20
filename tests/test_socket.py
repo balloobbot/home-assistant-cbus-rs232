@@ -38,6 +38,11 @@ async def test_real_serialx_socket() -> None:
                             body[20:22] = bytes.fromhex("9599")
                         body.append(-sum(body) & 255)
                         writer.write(body.hex().upper().encode() + b"\r\n")
+                if raw.startswith(b"\\05D1000901"):
+                    # APP/06 section 6.11.2: 56312 kWh, from source address 23.
+                    packet = bytearray.fromhex("0517D1000D810000DBF8")
+                    packet.append(-sum(packet) & 255)
+                    writer.write(packet.hex().upper().encode() + b"\r\n")
                 await writer.drain()
         except asyncio.IncompleteReadError:
             pass
@@ -57,6 +62,16 @@ async def test_real_serialx_socket() -> None:
         await client.set_level(8, 255)
         assert client.groups[8].level == 255
         assert received[-1].startswith(b"\\0538000208FF")
+        report = asyncio.Event()
+        unsubscribe = client.subscribe(report.set)
+        await client.send_application(0xD1, "request_electricity", {})
+        await asyncio.wait_for(report.wait(), 1)
+        unsubscribe()
+        reading = client.applications.devices[0xD1, "source_23"].readings["electricity"]
+        assert reading.value == 56312
+        assert reading.unit == "kWh"
+        await client.send_application(0xCB, "set_enable", {"group": 7, "value": 99})
+        assert client.applications.devices[0xCB, "group_7"].values["value"] == 99
     finally:
         await client.disconnect()
         server.close()

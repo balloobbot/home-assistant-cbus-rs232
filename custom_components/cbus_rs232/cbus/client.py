@@ -9,6 +9,12 @@ from time import monotonic
 
 import serialx
 
+from .applications import (
+    LOAD_APPLICATIONS,
+    ApplicationCommand,
+    ApplicationEvent,
+    encode_application,
+)
 from .protocol import (
     LightingCommand,
     LightingEvent,
@@ -21,6 +27,7 @@ from .protocol import (
     lighting_application,
     status_request,
 )
+from .state import ApplicationState
 
 _LOGGER = logging.getLogger(__name__)
 ACK_TIMEOUT = 5.0
@@ -41,6 +48,7 @@ class Group:
     target: int | None = None
     ramp_start: float = 0
     ramp_duration: float = 0
+    application: int = 56
 
     @property
     def brightness(self) -> int | None:
@@ -55,6 +63,8 @@ class CBus:
         self.port = port
         self.application = lighting_application(application)
         self.groups: dict[int, Group] = {}
+        self.loads: dict[int, dict[int, Group]] = {application: self.groups}
+        self.applications = ApplicationState()
         self.connected = False
         self._writer = None
         self._reader_task: asyncio.Task | None = None
@@ -65,6 +75,7 @@ class CBus:
         self._on_confirm: Callable[[], None] | None = None
         self._status_pending: tuple[set[int], asyncio.Future] | None = None
         self._refresh_lock = asyncio.Lock()
+        self._scanned = False
         self._tag = 0
         self._listeners: list[Callable[[], None]] = []
 
@@ -90,7 +101,8 @@ class CBus:
                 self._writer.write(b"~~~\r")
                 await self._writer.drain()
                 # Configure volatile options only; do not change PCI EEPROM.
-                await self._send(f"@A32100{self.application:02X}".encode())
+                await self._send(b"@A32100FF")
+                await self._send(b"@A32200FF")
                 await self._send(b"@A3420006")  # LOCAL_SAL and power-up notification
                 await self._send(
                     b"@A3300079"
@@ -164,17 +176,74 @@ class CBus:
                 with suppress(asyncio.CancelledError):
                     future.exception()
 
-    async def command(self, *commands: LightingCommand) -> None:
+    async def command(
+        self, *commands: LightingCommand, application: int | None = None
+    ) -> None:
         if not self.connected:
             raise ConnectionError("PCI is disconnected")
+        application = self.application if application is None else application
         await self._send(
-            encode_commands(self.application, commands),
+            encode_commands(application, commands),
             bus=True,
-            on_confirm=lambda: self._apply(LightingEvent(self.application, commands)),
+            on_confirm=lambda: self._apply(LightingEvent(application, commands)),
         )
 
-    async def set_level(self, group: int, level: int, ramp_index: int = 0) -> None:
-        await self.command(level_command(group, level, ramp_index))
+    async def set_level(
+        self,
+        group: int,
+        level: int,
+        ramp_index: int = 0,
+        *,
+        application: int | None = None,
+    ) -> None:
+        await self.command(
+            level_command(group, level, ramp_index), application=application
+        )
+
+    async def send_application(self, application: int, name: str, values: dict) -> None:
+        if not self.connected:
+            raise ConnectionError("PCI is disconnected")
+        # Group-addressed state messages define the new shared state. Commands to
+        # security and access devices need a separate status report from the device.
+        state_message = application in (0x19, 0xCA, 0xCB, 0xC0, 0xAC) and name not in (
+            "request_media",
+            "refresh_hvac",
+            "step_track",
+            "step_category",
+            "step_selection",
+            "enumerate",
+        )
+        await self._send(
+            encode_application(application, name, values),
+            bus=True,
+            on_confirm=(
+                lambda: self._apply(
+                    ApplicationEvent(
+                        application, 0, (ApplicationCommand(name, dict(values)),)
+                    )
+                )
+            )
+            if state_message
+            else None,
+        )
+
+    async def refresh_applications(self) -> None:
+        applications = (
+            {app for app, groups in self.loads.items() if groups}
+            if self._scanned
+            else LOAD_APPLICATIONS
+        )
+        for application in sorted(applications - {self.application}):
+            await self._send(status_request(application), bus=True)
+        self._scanned = True
+        blocks = [
+            (app, start)
+            for app, groups in self.loads.items()
+            if app != self.application
+            for start in sorted({address // 32 * 32 for address in groups})
+        ]
+        for application, start in blocks:
+            await self._send(status_request(application, start, levels=True), bus=True)
 
     async def refresh(self) -> None:
         async with self._refresh_lock:
@@ -193,6 +262,7 @@ class CBus:
                     future.cancel()
                     with suppress(asyncio.CancelledError):
                         future.exception()
+            await self.refresh_applications()
 
     async def _poll(self) -> None:
         try:
@@ -206,7 +276,7 @@ class CBus:
         while True:
             await asyncio.sleep(1)
             active = False
-            for group in self.groups.values():
+            for group in (g for groups in self.loads.values() for g in groups.values()):
                 if group.target is not None:
                     active = True
                     if monotonic() >= group.ramp_start + group.ramp_duration:
@@ -272,22 +342,35 @@ class CBus:
         except ValueError:
             _LOGGER.debug("Discarded invalid PCI frame: %r", line)
             return
-        if event is not None and event.application == self.application:
+        if event is not None:
             self._apply(event)
 
-    def _apply(self, event: LightingEvent | StatusReport) -> None:
+    def _apply(self, event: LightingEvent | StatusReport | ApplicationEvent) -> None:
+        if isinstance(event, ApplicationEvent):
+            self.applications.apply(event)
+            self._notify()
+            return
+        if event.application not in LOAD_APPLICATIONS:
+            return
+        groups = self.loads.setdefault(event.application, {})
         if isinstance(event, StatusReport):
-            if event.levels and self._status_pending is not None:
+            if (
+                event.levels
+                and event.application == self.application
+                and self._status_pending is not None
+            ):
                 remaining, future = self._status_pending
                 remaining.difference_update(value.group for value in event.groups)
                 if not remaining and not future.done():
                     future.set_result(None)
             for value in event.groups:
                 if value.group == 255 or (
-                    value.status == Status.ABSENT and value.group not in self.groups
+                    value.status == Status.ABSENT and value.group not in groups
                 ):
                     continue
-                group = self.groups.setdefault(value.group, Group(value.group))
+                group = groups.setdefault(
+                    value.group, Group(value.group, application=event.application)
+                )
                 group.status = value.status
                 if value.level is not None:
                     group.level = value.level
@@ -299,7 +382,9 @@ class CBus:
             for command in event.commands:
                 if command.group == 255:
                     continue
-                group = self.groups.setdefault(command.group, Group(command.group))
+                group = groups.setdefault(
+                    command.group, Group(command.group, application=event.application)
+                )
                 if command.level is not None:
                     current = group.brightness
                     group.target = None

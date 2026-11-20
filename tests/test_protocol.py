@@ -276,7 +276,7 @@ def test_malformed_packets(payload: bytes) -> None:
     [
         bytes.fromhex("05013802007908"),
         bytes.fromhex("05013801017908"),
-        bytes.fromhex("0501CA007908"),
+        bytes.fromhex("0501C1007908"),
         b"\x32\x21\x00",
     ],
 )

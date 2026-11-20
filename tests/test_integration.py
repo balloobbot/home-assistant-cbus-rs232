@@ -25,26 +25,6 @@ from custom_components.cbus_rs232.light import CBusLight
 from .conftest import PCI
 
 
-@pytest.fixture
-def entry(hass: HomeAssistant) -> MockConfigEntry:
-    entry = MockConfigEntry(
-        domain=DOMAIN, data={"port": "esphome://proxy/uart0", "application": 56}
-    )
-    entry.add_to_hass(hass)
-    return entry
-
-
-@pytest.fixture(autouse=True)
-def dependencies():
-    with (
-        patch("homeassistant.setup.async_process_deps_reqs", return_value=None),
-        patch(
-            "homeassistant.config_entries.async_process_deps_reqs", return_value=None
-        ),
-    ):
-        yield
-
-
 async def test_config_flow(hass: HomeAssistant, pci: PCI) -> None:
     result = await hass.config_entries.flow.async_init(
         DOMAIN, context={"source": "user"}
@@ -180,13 +160,13 @@ async def test_light_transitions_and_errors(entry: MockConfigEntry) -> None:
     assert light.name == "Kitchen"
     with patch.object(client, "set_level", new=AsyncMock()) as set_level:
         await light.async_turn_on(brightness=255, transition=2)
-        set_level.assert_awaited_once_with(8, 255, 1)
+        set_level.assert_awaited_once_with(8, 255, 1, application=56)
         group.level = None
         await light.async_turn_off(transition=4)
-        set_level.assert_awaited_with(8, 0, 1)
+        set_level.assert_awaited_with(8, 0, 1, application=56)
         group.level = 0
         await light.async_turn_off()
-        set_level.assert_awaited_with(8, 0, 0)
+        set_level.assert_awaited_with(8, 0, 0, application=56)
     group.status = Status.ERROR
     assert light.is_on is None
     with pytest.raises(HomeAssistantError):

@@ -2,12 +2,15 @@
 
 import asyncio
 from collections.abc import Iterator
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
+from homeassistant.core import HomeAssistant
+from pytest_homeassistant.common import MockConfigEntry
 
 from custom_components.cbus_rs232.cbus.client import CBus
 from custom_components.cbus_rs232.cbus.protocol import checksum
+from custom_components.cbus_rs232.const import DOMAIN
 
 
 class PCI:
@@ -64,3 +67,24 @@ async def client(pci: PCI) -> CBus:
     await client.connect()
     yield client
     await client.disconnect()
+
+
+@pytest.fixture
+def entry(hass: HomeAssistant) -> MockConfigEntry:
+    entry = MockConfigEntry(
+        domain=DOMAIN, data={"port": "esphome://proxy/uart0", "application": 56}
+    )
+    entry.add_to_hass(hass)
+    return entry
+
+
+@pytest.fixture(autouse=True)
+def dependencies(hass):
+    hass.http = Mock()
+    with (
+        patch("homeassistant.setup.async_process_deps_reqs", return_value=None),
+        patch(
+            "homeassistant.config_entries.async_process_deps_reqs", return_value=None
+        ),
+    ):
+        yield
